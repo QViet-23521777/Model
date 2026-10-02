@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Báo cáo kết hợp ba nhánh</title>
+<style>
+:root { --nen:#ffffff; --chu:#1f2328; --phu:#57606a; --vien:#d0d7de; --dong:#f6f8fa; --nhan:#0969da; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --nen:#0d1117; --chu:#e6edf3; --phu:#9198a1; --vien:#30363d; --dong:#161b22; --nhan:#4493f8; color-scheme:dark; } }
+:root[data-theme="dark"] { --nen:#0d1117; --chu:#e6edf3; --phu:#9198a1; --vien:#30363d; --dong:#161b22; --nhan:#4493f8; color-scheme:dark; }
+body { background:var(--nen); color:var(--chu); font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; max-width:960px; margin:0 auto; padding:24px 16px 64px; }
+h1 { font-size:1.8em; border-bottom:2px solid var(--vien); padding-bottom:.3em; }
+h2 { margin-top:2em; border-bottom:1px solid var(--vien); padding-bottom:.2em; }
+table { border-collapse:collapse; width:100%; margin:1em 0; font-size:.93em; display:block; overflow-x:auto; }
+th, td { border:1px solid var(--vien); padding:6px 10px; text-align:left; vertical-align:top; }
+th { background:var(--dong); }
+tr:nth-child(even) td { background:var(--dong); }
+blockquote { margin:1em 0; padding:.2em 1em; border-left:4px solid var(--nhan); background:var(--dong); }
+pre { background:var(--dong); border:1px solid var(--vien); padding:12px; overflow-x:auto; line-height:1.35; }
+code { font-family:Consolas,"Cascadia Mono",monospace; font-size:.9em; }
+em { color:var(--phu); }
+@media print { body { max-width:none; } table { display:table; } }
+</style></head><body>
+<h1>Báo cáo: Kết hợp nhánh text và nhánh hành vi trong phát hiện đánh giá giả</h1>
+<p><em>Số liệu dùng dữ liệu đã làm sạch (khử review trùng) và cấu hình đề xuất. Cập nhật 30/09/2026.</em></p>
+<h2>Tóm tắt</h2>
+<ul>
+<li>Đồ án có hai nhánh độc lập: <strong>nhánh text</strong> (ViSoBERT) đọc nội dung từng review tiếng Việt; <strong>nhánh hành vi</strong> (LightGBM) xem thói quen đăng bài của người viết trên dữ liệu Amazon.</li>
+<li>Hai nhánh <strong>không gộp thành một model</strong> mà <strong>nối tiếp</strong>: text chấm review → tra hành vi của đúng người viết → bối cảnh sản phẩm → bảng quyết định.</li>
+<li>Trên YelpZip (bộ duy nhất có nội dung, lịch sử người viết và nhãn thật trên cùng người), ghép hai nhánh nâng AUC từ <strong>0,753 (chỉ text) lên 0,774</strong>; nhóm bị kết luận "rất nghi" có <strong>25,4 %</strong> review bị Yelp lọc, nhóm "bình thường" chỉ <strong>1,5 %</strong>.</li>
+<li>Sau khi khử 1,09 % review trùng, <strong>T_burst (đăng dồn dập)</strong> là loại hành vi duy nhất vừa đứng vững vừa được nhãn độc lập xác nhận nên được dùng để <strong>ra quyết định</strong>; <strong>khen quá mức</strong> có bằng chứng yếu nên dùng cho mức <strong>theo dõi</strong>; chê quá mức, chưa mua, lặp trên biến thể được <strong>báo cáo cho từng người</strong> kèm mức tin cậy.</li>
+<li>Thư mục <code>goi_ket_hop</code> chạy được cả hai nhánh trên một file review.</li>
+</ul>
+<h2>1. Hệ thống phát hiện những gì</h2>
+<table>
+<thead>
+<tr>
+<th>Cấp</th>
+<th>Câu hỏi</th>
+<th>Nhánh</th>
+<th>Phát hiện</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Review</td>
+<td>Review này viết có bất thường?</td>
+<td>Text</td>
+<td>Review giả (khen/chê theo mẫu), review chỉ nói về shop/giao hàng, nội dung không liên quan (quảng cáo, rác)</td>
+</tr>
+<tr>
+<td>Người viết</td>
+<td>Tài khoản này đăng bài có bất thường?</td>
+<td>Hành vi</td>
+<td>5 chỉ số: <strong>đăng dồn dập</strong> (ra quyết định), <strong>khen quá mức</strong> (theo dõi), chê quá mức, chưa mua mà review, lặp trên biến thể (báo cáo)</td>
+</tr>
+<tr>
+<td>Sản phẩm</td>
+<td>Sản phẩm có bị thao túng điểm?</td>
+<td>Sản phẩm</td>
+<td><strong>Nhiều tài khoản mới dồn vào</strong> trong vài ngày; bị bơm / bị dìm điểm (gần như không xảy ra trên Amazon)</td>
+</tr>
+</tbody>
+</table>
+<h2>2. Nhánh text (ViSoBERT)</h2>
+<p>Dữ liệu ViSpamReviews (Shopee, tiếng Việt). 3 seed (1, 2, 42), 5 epoch:</p>
+<table>
+<thead>
+<tr>
+<th>Bộ dữ liệu</th>
+<th>Bài toán</th>
+<th>Macro-F1 (trung bình ± độ lệch chuẩn)</th>
+<th>Accuracy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>V1</td>
+<td>binary</td>
+<td>89,92 ± 0,21</td>
+<td>91,92</td>
+</tr>
+<tr>
+<td>V1</td>
+<td>multiclass</td>
+<td>78,74 ± 0,70</td>
+<td>90,66</td>
+</tr>
+<tr>
+<td>V2</td>
+<td>binary</td>
+<td>89,51 ± 0,11</td>
+<td>91,84</td>
+</tr>
+<tr>
+<td>V2</td>
+<td>multiclass</td>
+<td>77,54 ± 0,54</td>
+<td>91,18</td>
+</tr>
+</tbody>
+</table>
+<p>Model dùng trong hệ thống: <strong>V2 multiclass, seed 42</strong> (lớp 0 = không spam; 1 = review giả; 2 = chỉ nói về shop; 3 = không liên quan; <code>p_spam = 1 − p(lớp 0)</code>). Chạy lại trên máy bằng chính file trọng số: macro-F1 <strong>0,7785</strong> (lúc train 0,7782), trùng 99,97 % dự đoán. Suy ra bài toán binary từ model này đạt macro-F1 0,8991.</p>
+<p>F1 từng lớp (V2 multiclass seed 42): không spam 0,95; review giả 0,60; chỉ nói về shop 0,67; không liên quan 0,89 → nhánh text <strong>bắt tốt rác/quảng cáo, yếu với review giả viết khéo</strong>.</p>
+<p>Triển khai nhẹ (chấm 3.974 câu trên CPU):</p>
+<table>
+<thead>
+<tr>
+<th>Cách chạy</th>
+<th>Môi trường</th>
+<th>Model</th>
+<th>Macro-F1</th>
+<th>Thời gian</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>torch</td>
+<td>1.247 MB</td>
+<td>390 MB</td>
+<td>0,7785</td>
+<td>236 giây</td>
+</tr>
+<tr>
+<td>ONNX (không torch)</td>
+<td>425 MB</td>
+<td>390 MB</td>
+<td>0,7785</td>
+<td>194 giây</td>
+</tr>
+<tr>
+<td>ONNX nén int8</td>
+<td>425 MB</td>
+<td>98 MB</td>
+<td>0,7758</td>
+<td>85 giây</td>
+</tr>
+</tbody>
+</table>
+<h2>3. Nhánh hành vi (dữ liệu đã làm sạch)</h2>
+<p><strong>Làm sạch:</strong> 478.019 review Electronics (1,09 %) là bản trùng hoàn toàn (cùng người, sản phẩm, thời điểm, độ dài, tiêu đề). Sau khi bỏ và chạy lại: 43.408.925 review, 1.850.383 người có ≥ 5 review. Model chính: <code>model_hanh_vi_v2_dedup.pkl</code>.</p>
+<p>Chỉ số tái tạo nhãn proxy (30 % dữ liệu giữ lại) và so với <strong>nhãn lọc độc lập của Yelp</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Loại</th>
+<th>AUC (Electronics)</th>
+<th>PR-AUC</th>
+<th>AUC so nhãn Yelp</th>
+<th>Trạng thái</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>T_burst</strong> — đăng dồn dập</td>
+<td><strong>0,925</strong></td>
+<td>0,756</td>
+<td><strong>0,71</strong></td>
+<td>✅ Tin cậy</td>
+</tr>
+<tr>
+<td>T_unverified — chưa mua</td>
+<td>0,802</td>
+<td>0,492</td>
+<td>—</td>
+<td>Chưa kiểm chứng độc lập</td>
+</tr>
+<tr>
+<td>T_promoter — khen quá mức</td>
+<td>0,889</td>
+<td>0,509</td>
+<td>0,61</td>
+<td>⚠️ Thận trọng</td>
+</tr>
+<tr>
+<td>T_demoter — chê quá mức</td>
+<td>0,848</td>
+<td>0,483</td>
+<td>0,44</td>
+<td>⚠️ Không khớp Yelp</td>
+</tr>
+<tr>
+<td>T_variant_spam — lặp trên biến thể</td>
+<td>0,788</td>
+<td>0,127</td>
+<td>0,44</td>
+<td>🧪 Thử nghiệm</td>
+</tr>
+<tr>
+<td>T_ring — nhóm cấu kết</td>
+<td>0,670</td>
+<td>0,002</td>
+<td>0,54</td>
+<td>🧪 Thử nghiệm</td>
+</tr>
+</tbody>
+</table>
+<p>Ảnh hưởng của làm sạch (trước → sau): T_burst 0,933 → 0,925 (đứng vững); T_unverified, T_promoter, T_demoter không đổi; <strong>T_variant_spam PR-AUC 0,75 → 0,13 và T_ring 0,14 → 0,002</strong> — phần lớn tín hiệu cũ của hai loại này đến từ review trùng.</p>
+<p>Chân dung người bị T_burst gắn cờ (5 % điểm cao nhất, Electronics): đăng <strong>toàn bộ review trong ~1 ngày</strong>, khoảng cách giữa hai review gần 0, ~5 review/ngày; người bình thường rải trên ~6 ngày với khoảng cách trung vị ~170 ngày.</p>
+<h2>4. Kiểm chứng bằng nhãn độc lập — YelpZip</h2>
+<p>YelpZip (Rayana &amp; Akoglu, KDD 2015): 608.598 review nhà hàng, 260.277 người dùng, 13,2 % review bị bộ lọc Yelp gắn cờ. Pipeline chạy nguyên vẹn, model Electronics <strong>không train lại</strong>. Người "bị lọc" = ≥ 50 % review bị lọc (3,9 % trong 23.831 người có ≥ 5 review).</p>
+<ul>
+<li><strong>T_burst</strong> (công thức nhãn): nhóm "đáng ngờ" bị lọc 8,9 % so với 2,4 % ở nhóm bình thường (<strong>gấp 2,3 lần</strong> mức ngẫu nhiên), AUC 0,70. Model T_burst đã làm sạch: AUC <strong>0,71</strong>.</li>
+<li><strong>Model có giá trị ngoài "ít hoạt động":</strong> mốc đơn giản "ít ngày hoạt động" đạt AUC 0,73, nhưng khi so <strong>trong từng nhóm cùng mức hoạt động</strong>, T_burst vẫn đạt <strong>0,65 / 0,69 / 0,70 / 0,74</strong>, mạnh nhất ở nhóm hoạt động nhiều.</li>
+<li><strong>Người mới là nơi gian lận tập trung:</strong> review của người &lt; 5 review bị lọc <strong>21,5 %</strong>, gấp 7 lần người đủ review (2,9 %).</li>
+<li><strong>Bùng nổ tài khoản mới được xác nhận:</strong> review của người mới trên sản phẩm đang bùng nổ bị lọc <strong>42,3 %</strong>, gấp đôi người mới ở sản phẩm khác (21,5 %). Tuy vậy phần lớn chênh lệch đến từ việc đó là sản phẩm nhỏ, nhiều người mới (xem mục 8b).</li>
+</ul>
+<h2>5. Nhánh sản phẩm và người dùng mới</h2>
+<p>Nhánh hành vi chỉ chấm người có ≥ 5 review; phần còn lại rất lớn:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Electronics (đã làm sạch)</th>
+<th>Musical Instruments</th>
+<th>Home_and_Kitchen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Người dùng &lt; 5 review</td>
+<td>89,9 %</td>
+<td>95,2 %</td>
+<td>85,2 %</td>
+</tr>
+<tr>
+<td>Review do nhóm này viết</td>
+<td>59,2 %</td>
+<td>73,7 %</td>
+<td>49,3 %</td>
+</tr>
+</tbody>
+</table>
+<p>Nhánh sản phẩm tính điểm sản phẩm <strong>có trọng số tin cậy</strong> (review của tài khoản đáng ngờ được tính ít) và cờ <strong>bùng nổ tài khoản mới</strong> (≥ 5 review người mới trong 7 ngày <strong>và</strong> ≥ 50 % review người mới của sản phẩm):</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Electronics (đã làm sạch)</th>
+<th>Musical Instruments</th>
+<th>Home_and_Kitchen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sản phẩm đủ dữ liệu (≥ 20 review)</td>
+<td>245.367</td>
+<td>23.840</td>
+<td>430.758</td>
+</tr>
+<tr>
+<td>Bị bơm / bị dìm (chênh ≥ 0,5★)</td>
+<td>0 / 0</td>
+<td>0 / 0</td>
+<td>0 / 25</td>
+</tr>
+<tr>
+<td>Bùng nổ tài khoản mới</td>
+<td>1.010</td>
+<td>182</td>
+<td>2.931</td>
+</tr>
+</tbody>
+</table>
+<p>Gần như không có sản phẩm bị "chiếm" điểm: tài khoản đáng ngờ viết quá ít review để kéo lệch trung bình (25 sản phẩm "bị dìm" của Home_and_Kitchen đều nhỏ, trung vị 24 review). Nguy cơ thật nằm ở người mới, được xử lý bằng cờ bùng nổ. Cờ bùng nổ tự tắt khi file đầu vào phủ dưới 60 ngày: khi đó gần như ai cũng có &lt; 5 review trong file và mọi review đều nằm trong vài tuần, nên điều kiện "dồn vào 7 ngày" không còn phân biệt được chiến dịch với bán hàng bình thường.</p>
+<blockquote><p><strong>Đính chính (2026-10-01).</strong> Bản trước ghi 16 / 201, 0 / 2, 33 / 386. Các số đó sai: 10 review "ảo" dùng để co điểm về trung bình chung mang trọng số 1 trong khi review thật mang trọng số &lt; 1, nên sản phẩm điểm thấp bị gắn "bị dìm" dù không ai bị hạ trọng số; ngoài ra lần chạy hàng loạt dùng trọng số <code>1 − diem_toi_da</code> (bão hòa) nên người có lịch sử bị tin ít hơn người mới. Đã sửa công thức và dùng cùng trọng số với gói (chỉ hạ top 5 % T_burst). Bảng quyết định không đổi vì nhãn bơm/dìm chỉ ghi vào lý do.</p></blockquote>
+<h2>6. Cách kết hợp</h2>
+<pre><code>Review ─► [1. Text]      ViSoBERT → p_spam, loại spam
+            │
+            ▼  (tra theo người viết)
+         [2. Hành vi]    5 chỉ số của đúng người viết, xếp hạng so với 1,85 triệu người Electronics
+            │            (&lt; 5 review → &quot;chưa đủ dữ liệu&quot;)
+            ▼
+         [3. Sản phẩm]   bùng nổ tài khoản mới?
+            │
+            ▼
+         [Bảng quyết định]
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Text (p_spam ≥ 0,5)</th>
+<th>Hành vi (top 5 % T_burst)</th>
+<th>Kết luận</th>
+<th>Xử lý</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Spam</td>
+<td>Bất thường</td>
+<td><strong>Rất nghi</strong></td>
+<td>Ẩn review + kiểm tra tài khoản</td>
+</tr>
+<tr>
+<td>Spam</td>
+<td>Bình thường</td>
+<td>Review xấu</td>
+<td>Chỉ ẩn review</td>
+</tr>
+<tr>
+<td>Sạch</td>
+<td>Bất thường</td>
+<td><strong>Nghi viết khéo</strong></td>
+<td>Gửi người kiểm duyệt</td>
+</tr>
+<tr>
+<td>Sạch</td>
+<td>Bình thường</td>
+<td>Bình thường</td>
+<td>Cho qua</td>
+</tr>
+<tr>
+<td>Sạch</td>
+<td>Bình thường, nhưng <strong>khen quá mức</strong> top 5 %</td>
+<td><strong>Theo dõi</strong></td>
+<td>Theo dõi tài khoản, chưa xử lý review</td>
+</tr>
+<tr>
+<td>Bất kỳ</td>
+<td>Chưa đủ dữ liệu</td>
+<td>Đếm 3 tín hiệu: text spam, sản phẩm bùng nổ, chưa mua (≥ 2 → rất nghi; 1 → cần xem; 0 → chưa đủ dữ liệu)</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>Review mà text cho là sạch <strong>vẫn được xét hành vi</strong> — đó là cách bắt review giả viết khéo. Người mới <strong>không bao giờ</strong> bị kết luận "bình thường".</p>
+<h3>Vì sao dồn dập ra quyết định, các chỉ số khác chỉ theo dõi / báo cáo</h3>
+<p>Thử trên YelpZip (người có ≥ 5 review, review text sạch và không dồn dập — mức nền 1,5 % bị lọc):</p>
+<table>
+<thead>
+<tr>
+<th>Chỉ số phụ lọt top 5 %</th>
+<th>Số review</th>
+<th>% bị Yelp lọc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Khen quá mức</td>
+<td>4.461</td>
+<td><strong>3,9 %</strong> (gấp 2,6) → đủ để <strong>theo dõi</strong></td>
+</tr>
+<tr>
+<td>Chê quá mức</td>
+<td>4.736</td>
+<td>2,1 % (gấp 1,4) → chỉ báo cáo</td>
+</tr>
+</tbody>
+</table>
+<p>Cho khen / chê quá mức <strong>ra quyết định ngang hàng</strong> với dồn dập: bắt nhiều hơn (recall 59 % → 63 %) nhưng nhóm "rất nghi" <strong>kém chính xác hẳn</strong> (24,9 % → 16,7 % bị lọc thật). Ghép <strong>có trọng số</strong> thì khen quá mức có ích (AUC text + hành vi 0,774 → 0,784), chê quá mức không thêm gì.</p>
+<p><strong>Vì sao nối tiếp, không gộp model:</strong> hai bộ dữ liệu không có người dùng chung nên không thể train model gộp; luật nối tiếp dễ giải thích (mỗi kết luận chỉ ra do nhánh nào) và sát triển khai thật (text chấm ngay, điểm hành vi tính theo lô rồi tra).</p>
+<h2>7. Thử quy trình ghép trên dữ liệu thật (YelpZip)</h2>
+<p>Tầng text dùng model tiếng Anh thay thế (TF-IDF + hồi quy logistic, chia 5 phần theo người dùng) vì ViSoBERT là model tiếng Việt; tầng hành vi dùng model đã làm sạch, chỉ T_burst.</p>
+<table>
+<thead>
+<tr>
+<th>(người có ≥ 5 review)</th>
+<th>AUC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chỉ text</td>
+<td>0,753</td>
+</tr>
+<tr>
+<td>Chỉ hành vi (T_burst)</td>
+<td>0,695</td>
+</tr>
+<tr>
+<td><strong>Text + hành vi</strong></td>
+<td><strong>0,774</strong></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Kết luận của hệ thống</th>
+<th>Số review</th>
+<th>% bị Yelp lọc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bình thường</td>
+<td>211.748</td>
+<td>1,5 %</td>
+</tr>
+<tr>
+<td>Review xấu</td>
+<td>45.468</td>
+<td>6,7 %</td>
+</tr>
+<tr>
+<td>Nghi viết khéo</td>
+<td>9.937</td>
+<td>7,8 %</td>
+</tr>
+<tr>
+<td><strong>Rất nghi</strong></td>
+<td>3.592</td>
+<td><strong>25,4 %</strong></td>
+</tr>
+<tr>
+<td>Cần xem (người mới)</td>
+<td>138.062</td>
+<td>32,8 %</td>
+</tr>
+<tr>
+<td>Chưa đủ dữ liệu (người mới)</td>
+<td>199.791</td>
+<td>13,6 %</td>
+</tr>
+</tbody>
+</table>
+<p>Bảng quyết định bắt được <strong>59 %</strong> review bị lọc của người đủ review (chỉ text: 49 %) với độ chính xác không đổi. 64 ví dụ thật chia 8 tình huống: <code>bao_cao/vi_du_ket_hop_yelp.csv</code> (thư mục gốc dự án).</p>
+<h2>8. Thư mục kết hợp <code>goi_ket_hop</code></h2>
+<p>Chạy: <code>..\text\.venv\Scripts\python chay_ket_hop.py &lt;file.csv&gt; &lt;thu_muc_ra&gt;</code> với các cột <code>user_id, product_id, rating, thoi_gian, comment</code> và tuỳ chọn <code>da_mua</code>, <code>diem_tb_sp</code>, <code>so_danh_gia_sp</code> (điểm trung bình và số đánh giá <strong>công khai</strong> của sản phẩm — cần cho khen / chê quá mức). Kết quả trên dữ liệu minh hoạ tự tạo (<code>vi_du_dau_vao.csv</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Người dùng</th>
+<th>Tình huống</th>
+<th>Kết luận</th>
+<th>Nhánh bắt</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Khách thật</td>
+<td>6 review cụ thể, rải 2 năm</td>
+<td>Bình thường</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Khách thật</td>
+<td>1 review "ib zalo… mã giảm giá"</td>
+<td>Chỉ review đó bị đánh dấu</td>
+<td>Text</td>
+</tr>
+<tr>
+<td>Tài khoản dồn dập</td>
+<td>5 review 5★ khen chung chung trong 17 phút, sản phẩm chỉ 3,3★</td>
+<td>Dồn dập 97 %, khen quá mức 100 %: review sạch → nghi viết khéo; review spam → rất nghi</td>
+<td><strong>Hành vi</strong> bắt được thứ text bỏ sót</td>
+</tr>
+<tr>
+<td>Tài khoản chuyên chê</td>
+<td>5 review 1★, chưa mua, sản phẩm 4,6★</td>
+<td>Chê quá mức 100 %, chưa mua 100 % → <strong>liệt kê trong báo cáo từng người</strong>, không tự động kết luận</td>
+<td>Hành vi (báo cáo)</td>
+</tr>
+<tr>
+<td>6 tài khoản mới</td>
+<td>Cùng 1 sản phẩm trong 2 ngày, chưa mua</td>
+<td>Rất nghi</td>
+<td>Sản phẩm</td>
+</tr>
+</tbody>
+</table>
+<p>Với file nhỏ, mỗi chỉ số hành vi dùng công thức gán nhãn tương ứng, xếp hạng so với Electronics, vì điểm model cần đặc trưng bối cảnh cả sàn (độ phổ biến sản phẩm…) vốn bị lệch khi ít dữ liệu.</p>
+<h2>8b. Làm rõ nhánh sản phẩm và nâng cấp tín hiệu hành vi</h2>
+<p>Ba bước bổ sung, đều đo bằng nhãn lọc độc lập của YelpZip (<code>code/danh_gia_san_pham_yelp.py</code>, <code>quy_tac_nang_hang.py</code>, <code>tin_hieu_moi.py</code>, <code>danh_gia_tin_hieu_moi.py</code>).</p>
+<h3>Bước 1 — Nhánh sản phẩm đóng góp gì</h3>
+<p><strong>Bỏ từng tầng khỏi bảng quyết định</strong> (608.598 review):</p>
+<table>
+<thead>
+<tr>
+<th>Cấu hình</th>
+<th>Bắt được review bị lọc (recall)</th>
+<th>Precision</th>
+<th>"Rất nghi": số / % bị lọc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Đủ 3 tầng</td>
+<td>62,2 %</td>
+<td>25,4 %</td>
+<td>3.592 / 25,4 %</td>
+</tr>
+<tr>
+<td>Bỏ nhánh sản phẩm</td>
+<td>62,2 %</td>
+<td>25,4 %</td>
+<td>3.507 / 24,9 %</td>
+</tr>
+<tr>
+<td>Bỏ nhánh hành vi</td>
+<td>61,2 % (người đủ review: 59 % → <strong>49 %</strong>)</td>
+<td>26,3 %</td>
+<td>85 / 48,2 %</td>
+</tr>
+<tr>
+<td>Bỏ nhánh text</td>
+<td><strong>2,1 %</strong></td>
+<td>12,5 %</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Text là xương sống</strong>; bỏ text thì hệ thống gần như không bắt được gì.</li>
+<li><strong>Hành vi bù 10 điểm recall</strong> cho người đủ review và tạo ra mức "rất nghi".</li>
+<li><strong>Nhánh sản phẩm gần như không đổi kết quả tổng</strong>: chỉ đổi kết luận của 123 review (các review này bị lọc 42 %, cao gấp 1,5–2 lần review cùng mức). Ở cấp sản phẩm, 12 sản phẩm bùng nổ bị lọc 36,2 %, nhưng sản phẩm <strong>cùng cỡ và cùng tỉ lệ người mới</strong> cũng bị lọc 31,3 % → phần lớn "tác động" là do đó là <strong>sản phẩm nhỏ nhiều người mới</strong>, đóng góp riêng của cờ bùng nổ nhỏ.</li>
+<li>Ở cấp sản phẩm, <strong>tỉ lệ người mới</strong> tìm ra nhà hàng bị lọc nhiều (top 10 %) với AUC 0,83; thêm độ tập trung + bùng nổ lên 0,84; độ chênh điểm (sau khi sửa công thức) không thêm gì (AUC riêng 0,46 — bản trước ghi 0,85 là do lỗi công thức).</li>
+</ul>
+<h3>Bước 2 — Quy tắc nâng hạng tín hiệu</h3>
+<p>Áp chung cho mọi chỉ số: <strong>lift</strong> = tỉ lệ bị lọc ở nhóm bị gắn cờ / nhóm còn lại (người có ≥ 5 review), khoảng tin cậy 95 % bootstrap.</p>
+<table>
+<thead>
+<tr>
+<th>Điều kiện</th>
+<th>Vai trò</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>lift ≥ 2, khoảng tin cậy &gt; 1, đứng vững sau khử trùng</td>
+<td><strong>Ra quyết định</strong></td>
+</tr>
+<tr>
+<td>lift ≥ 1,5, khoảng tin cậy &gt; 1</td>
+<td><strong>Theo dõi</strong></td>
+</tr>
+<tr>
+<td>Còn lại</td>
+<td><strong>Chỉ báo cáo</strong></td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Chỉ số (top 5 %)</th>
+<th>Lift</th>
+<th>Khoảng 95 %</th>
+<th>Khử trùng</th>
+<th>Vai trò theo quy tắc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Đăng dồn dập</td>
+<td><strong>4,70</strong></td>
+<td>4,03 – 5,44</td>
+<td>giữ</td>
+<td>quyết định</td>
+</tr>
+<tr>
+<td>Khen quá mức</td>
+<td><strong>2,21</strong></td>
+<td>1,78 – 2,65</td>
+<td>giữ</td>
+<td>quyết định *</td>
+</tr>
+<tr>
+<td>Chê quá mức</td>
+<td>0,82</td>
+<td>0,56 – 1,09</td>
+<td>giữ</td>
+<td>báo cáo</td>
+</tr>
+<tr>
+<td>Nhóm cấu kết (cũ, so tập sản phẩm)</td>
+<td>không đo được (33 % người hoà điểm tối đa)</td>
+<td>—</td>
+<td>sụp</td>
+<td>báo cáo</td>
+</tr>
+<tr>
+<td>Lặp trên biến thể</td>
+<td>0,44</td>
+<td>0,27 – 0,66</td>
+<td>sụp</td>
+<td>báo cáo</td>
+</tr>
+</tbody>
+</table>
+<p>* Khen quá mức đạt ngưỡng "quyết định", nhưng khi cho nó quyết định <strong>ngang hàng</strong> với dồn dập thì nhóm "rất nghi" giảm độ chính xác (24,9 % → 19,8 %). Gói hiện để ở mức <strong>theo dõi</strong>; đổi hay không là lựa chọn giữa độ phủ và độ chính xác.</p>
+<h3>Bước 3 — Tín hiệu mới, định nghĩa chung cho mọi sàn</h3>
+<p>Định nghĩa lấy từ nghiên cứu đã công bố, <strong>chỉ thử vài ngưỡng hợp lý</strong>; review dưới 8 từ không xét (câu ngắn kiểu "good" trùng tự nhiên).</p>
+<table>
+<thead>
+<tr>
+<th>Tín hiệu</th>
+<th>Định nghĩa</th>
+<th>Người bị gắn cờ</th>
+<th>Lift</th>
+<th>Khoảng 95 %</th>
+<th>Ngoài nhóm dồn dập</th>
+<th>Người mới (mức review)</th>
+<th>Vai trò</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Chép nội dung giữa các tài khoản</strong></td>
+<td>Review có bản gần giống (Jaccard ≥ 0,8, MinHash-LSH) do <strong>tài khoản khác</strong> đăng</td>
+<td>1,1 %</td>
+<td><strong>9,75</strong></td>
+<td>8,01 – 11,52</td>
+<td>9,93</td>
+<td><strong>2,41</strong></td>
+<td>quyết định</td>
+</tr>
+<tr>
+<td><strong>Cấu kết theo thời gian</strong></td>
+<td>Cùng một người khác review <strong>≥ 3 sản phẩm chung, mỗi lần cách ≤ 3 ngày</strong></td>
+<td>2,6 %</td>
+<td><strong>2,41</strong></td>
+<td>1,80 – 3,06</td>
+<td>2,24</td>
+<td>1,70</td>
+<td>quyết định</td>
+</tr>
+<tr>
+<td>Cấu kết theo thời gian, ≥ 2 sản phẩm</td>
+<td></td>
+<td>17 %</td>
+<td>1,53</td>
+<td>1,32 – 1,76</td>
+<td>1,37</td>
+<td>0,93</td>
+<td>theo dõi</td>
+</tr>
+<tr>
+<td>Lặp nội dung trong 1 tài khoản (≥ 8 từ)</td>
+<td>Bản gần giống (Jaccard ≥ 0,7) của <strong>chính mình</strong> ở sản phẩm khác</td>
+<td>0,3 %</td>
+<td>1,23</td>
+<td>0,00 – 2,77</td>
+<td>—</td>
+<td>1,17</td>
+<td>báo cáo</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Chép nội dung giữa tài khoản là tín hiệu mạnh nhất tìm được</strong>, độc lập với dồn dập (lift ngoài nhóm dồn dập vẫn 9,9) và <strong>giúp được người mới</strong> (2,4 lần) — nhóm nhánh hành vi cũ không chấm được. Lưu ý: bộ lọc Yelp có thể tự dùng dấu hiệu trùng nội dung, nên độ khớp có thể phần nào "cùng cách đo".</li>
+<li><strong>Cấu kết theo thời gian</strong> thay được T_ring cũ (sụp sau khử trùng). Áp nguyên định nghĩa sang Amazon Musical Instruments (đã khử 33.659 review trùng): gắn cờ 0,26 % người có ≥ 5 review; tỉ lệ ở nhóm dồn dập (0,53 %) gấp đôi nhóm còn lại (0,24 %) — <strong>cùng chiều với Yelp</strong>.</li>
+<li><strong>Đính chính:</strong> lần chạy đầu, "lặp nội dung trong 1 tài khoản" đạt lift 3,5–4,0, nhưng đó là do <strong>review cực ngắn lặp lại</strong>; trên Amazon MI định nghĩa đó gắn cờ 12,7 % người dùng. Sau khi áp quy tắc ≥ 8 từ, tín hiệu không còn ý nghĩa (lift 1,2–1,4) → chỉ báo cáo.</li>
+<li>Chưa làm: chép nội dung giữa tài khoản trên Amazon (MinHash cho 3 triệu review MI quá nặng với RAM hiện có); kiểm chứng trên YelpNYC / YelpChi để khẳng định "quy chuẩn chung". <strong>Hai tín hiệu mới chưa được đưa vào <code>chay_ket_hop.py</code>.</strong></li>
+</ul>
+<h2>9. Giới hạn</h2>
+<ul>
+<li>Text và hành vi <strong>không có người dùng chung</strong> → không có số đánh giá ghép trên dữ liệu tiếng Việt; kiến trúc ghép được kiểm chứng trên YelpZip với model text tiếng Anh thay thế.</li>
+<li>Nhãn nhánh hành vi là <strong>proxy</strong>; kiểm chứng độc lập hợp lệ duy nhất là YelpZip (nhãn lọc Yelp cũng không phải sự thật tuyệt đối; dữ liệu từ bản sao không chính thức). Hai bộ Amazon SNAP (Beauty, Clothing &amp; Accessories) không dùng được: sau khi bỏ review bị chép sang biến thể chỉ còn 3 và 1 người có nhãn.</li>
+<li>Phần lớn độ khớp với Yelp phản ánh <strong>mức độ hoạt động</strong> của người dùng; phần model học thêm có nhưng nhỏ.</li>
+<li>Mọi ngưỡng đặt tay; nhánh hành vi train trên Amazon, <strong>chưa kiểm chứng trên sàn Việt Nam</strong>.</li>
+<li>Musical Instruments và Home_and_Kitchen <strong>chưa được làm sạch</strong> (số liệu T_variant_spam / T_ring ở đó có thể bị thổi phồng).</li>
+<li>Điểm mù T_burst: người chỉ đăng một phiên với khoảng cách đều tuyệt đối xếp hạng thấp hơn thực tế.</li>
+<li>Khen / chê quá mức cần điểm trung bình và số đánh giá của sản phẩm (sản phẩm ≥ 10 đánh giá); thiếu thì hai chỉ số này để trống.</li>
+<li>Nhánh sản phẩm: "người mới" là người có &lt; 5 review trong dữ liệu, không phải tài khoản mới tạo (dữ liệu không có ngày tạo tài khoản); cờ bùng nổ tắt khi file &lt; 60 ngày (ngưỡng đặt tay); Home_and_Kitchen còn 25 sản phẩm "bị dìm" vì vẫn chấm bằng model hành vi bản gốc.</li>
+<li>Không phát hiện được: review giả viết khéo từ tài khoản hoạt động bình thường; phân biệt người được tặng hàng hợp lệ với gian lận.</li>
+</ul>
+<h2>10. Câu hỏi thường gặp khi bảo vệ</h2>
+<p><strong>Hai nhánh khác dữ liệu, khác ngôn ngữ, sao ghép được?</strong> — Ghép ở mức quy trình, không gộp model. Mỗi nhánh đánh giá trên dữ liệu riêng; quy trình ghép được kiểm chứng trên YelpZip, bộ có đủ hai loại thông tin trên cùng người.</p>
+<p><strong>Sao chỉ dồn dập được ra quyết định?</strong> — Đó là chỉ số duy nhất qua cả ba phép thử: khớp nhãn Yelp, vẫn đúng trong từng nhóm cùng mức hoạt động, đứng vững sau làm sạch dữ liệu. Các chỉ số khác vẫn được dùng: khen quá mức cho mức theo dõi (nhóm này bị Yelp lọc gấp 2,6 lần), chê quá mức / chưa mua / lặp trên biến thể được báo cáo cho từng người. Cho tất cả ra quyết định ngang hàng làm nhóm "rất nghi" kém chính xác (24,9 % → 16,7 %).</p>
+<p><strong>Người mới thì sao?</strong> — Không bị nhánh hành vi kết luận; dựa vào text, cờ bùng nổ tài khoản mới và việc đã mua chưa. Trên Yelp, người mới ở sản phẩm bùng nổ bị lọc gấp đôi, nhưng sản phẩm cùng cỡ và cùng tỉ lệ người mới cũng bị lọc gần như vậy (31 % so với 36 %), nên đóng góp riêng của cờ bùng nổ nhỏ.</p>
+<p><strong>Nhánh sản phẩm có tác dụng gì?</strong> — Nhãn bị bơm / bị dìm gần như không bật (Electronics 0 / 0): tài khoản đáng ngờ viết quá ít review để kéo lệch điểm sản phẩm quá 0,5★. Đây là kết quả, không phải lỗi; số cũ (16 / 201) sai do công thức và đã được đính chính ở mục 5. Phần dùng được là cờ bùng nổ cho người mới, và nó chỉ đổi kết luận của 123 review trên Yelp.</p>
+<p><strong>Ngưỡng lấy ở đâu?</strong> — Đặt tay, vì không có dữ liệu chung có nhãn để học ngưỡng tối ưu (giới hạn đã nêu).</p>
+<p><strong>Áp dụng cho Việt Nam được không?</strong> — Chưa chứng minh; cần dữ liệu sàn Việt có cả nội dung lẫn lịch sử người dùng (hướng phát triển).</p>
+<h2>11. Hướng phát triển</h2>
+<ul>
+<li>Thu thập dữ liệu tiếng Việt có nội dung, lịch sử người dùng và nhãn để đo trực tiếp hiệu quả ghép và học ngưỡng.</li>
+<li>Kiểm chứng thêm trên YelpNYC, YelpChi.</li>
+<li>Làm sạch Musical Instruments, Home_and_Kitchen; xem lại định nghĩa T_promoter / T_demoter, T_ring.</li>
+<li>Học cách ghép (thay luật đặt tay) khi có dữ liệu chung có nhãn; tín hiệu riêng cho người mới.</li>
+</ul>
+<h2>Nguồn dữ liệu</h2>
+<ul>
+<li>ViSpamReviews V1/V2 — Van Dinh &amp; Luu (2022, 2024).</li>
+<li>Amazon Reviews 2023 — McAuley Lab (Electronics, Musical Instruments, Home_and_Kitchen).</li>
+<li>YelpZip — Rayana &amp; Akoglu, "Collective Opinion Spam Detection: Bridging Review Networks and Metadata", KDD 2015 (bản sao Google Drive).</li>
+<li>Amazon SNAP (Beauty, Clothing &amp; Accessories) — McAuley &amp; Leskovec (2013).</li>
+</ul>
+</body></html>

@@ -1,0 +1,30 @@
+﻿user_id,product_id,rating,thoi_gian,da_mua,comment,diem_tb_sp,so_danh_gia_sp
+TK_DONG_DAP_01,SP_01,5,2024-06-15 23:10,True,"Sản phẩm tuyệt vời, shop phục vụ rất tốt, sẽ ủng hộ tiếp",3.3,140
+TK_DONG_DAP_01,SP_02,5,2024-06-15 23:12,True,"Chất lượng sản phẩm tuyệt vời, đóng gói đẹp và chắc chắn",3.3,140
+TK_DONG_DAP_01,SP_03,5,2024-06-15 23:15,True,Hàng đẹp lắm mọi người nên mua nha,3.3,140
+TK_DONG_DAP_01,SP_04,5,2024-06-15 23:26,True,"Giao hàng nhanh, sản phẩm y hình, 5 sao cho shop",3.3,140
+TK_DONG_DAP_01,SP_05,5,2024-06-15 23:27,True,"Rất đáng tiền, chất lượng tốt so với giá",3.3,140
+TK_DONG_DAP_01,SP_06,5,2024-09-18 22:40,True,"Sản phẩm tốt, sẽ quay lại ủng hộ shop",3.3,140
+KHACH_THAT_01,SP_11,4,2022-03-02 19:30,True,"Tai nghe âm bass hơi mạnh, pin dùng được khoảng 6 tiếng, đeo lâu hơi đau tai",4.2,850
+KHACH_THAT_01,SP_12,5,2022-06-30 20:30,True,"Sạc dự phòng sạc nhanh, cầm hơi nặng nhưng dung lượng đúng như quảng cáo",4.2,850
+KHACH_THAT_01,SP_13,3,2022-10-28 21:30,True,Chuột dùng ổn nhưng con lăn hơi kêu sau 2 tuần,4.2,850
+KHACH_THAT_01,SP_14,4,2023-02-25 22:30,True,"Bàn phím gõ êm, đèn nền đẹp, phần mềm đi kèm hơi khó dùng",4.2,850
+KHACH_THAT_01,SP_15,2,2023-06-25 23:30,True,"Cáp sạc bị lỏng đầu sau một tháng, đổi trả hơi lâu",4.2,850
+KHACH_THAT_01,SP_16,5,2023-10-24 00:30,True,"Loa nhỏ gọn, âm thanh trong, kết nối bluetooth ổn định",4.2,850
+KHACH_THAT_02,SP_21,5,2023-01-10 09:00,True,"Ốp lưng vừa khít máy, chất liệu mềm",4.4,320
+KHACH_THAT_02,SP_22,4,2023-02-19 11:00,True,"Kính cường lực dán dễ, có bụi một chút",4.4,320
+KHACH_THAT_02,SP_23,5,2023-03-31 13:00,True,shop uy tín ib zalo 09xx để nhận mã giảm giá 50%,4.4,320
+KHACH_THAT_02,SP_24,4,2023-05-10 15:00,True,"Giá đỡ điện thoại chắc chắn, xoay được nhiều góc",4.4,320
+KHACH_THAT_02,SP_25,3,2023-06-19 17:00,True,Dây đeo đồng hồ hơi cứng lúc đầu,4.4,320
+TK_MOI_01,SP_99,5,2024-08-01 10:00,False,Tuyệt vời,4.1,35
+TK_MOI_02,SP_99,5,2024-08-01 17:00,False,Sản phẩm tốt,4.1,35
+TK_MOI_03,SP_99,5,2024-08-02 00:00,False,Rất hài lòng,4.1,35
+TK_MOI_04,SP_99,5,2024-08-02 07:00,False,Chất lượng tốt,4.1,35
+TK_MOI_05,SP_99,5,2024-08-02 14:00,False,Đáng mua,4.1,35
+TK_MOI_06,SP_99,5,2024-08-02 21:00,False,Ok shop,4.1,35
+KHACH_MOI_07,SP_11,4,2024-09-05 20:15,True,"Tai nghe đeo vừa, âm thanh ổn so với giá tiền",4.2,850
+TK_CHUYEN_CHE_01,SP_31,1,2024-05-03 20:00,False,"Hàng kém chất lượng, dùng 2 ngày đã hỏng, không nên mua",4.6,1200
+TK_CHUYEN_CHE_01,SP_32,1,2024-05-12 21:00,False,"Sản phẩm tệ, khác xa hình quảng cáo",4.6,1200
+TK_CHUYEN_CHE_01,SP_33,1,2024-05-21 22:00,False,"Đóng gói cẩu thả, pin rất nhanh hết",4.6,1200
+TK_CHUYEN_CHE_01,SP_34,1,2024-05-30 23:00,False,"Âm thanh rè, không đáng tiền chút nào",4.6,1200
+TK_CHUYEN_CHE_01,SP_35,1,2024-06-09 00:00,False,"Chất liệu rẻ tiền, dùng một tuần là bong tróc",4.6,1200

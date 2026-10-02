@@ -1,0 +1,12 @@
+﻿user_id,so_review,ti_le_text_spam,xh_T_burst,xh_T_promoter,xh_T_demoter,xh_T_unverified,xh_T_variant_spam,T_burst_diem_model,muc_cao_nhat,T_burst_xep_hang,chi_so_noi_bat
+KHACH_MOI_07,1,0.0,,,,,,,chua_du_du_lieu,,
+KHACH_THAT_01,6,0.0,0.026973026973026972,0.24375624375624375,0.6943056943056943,0.6693306693306693,0.0,0.913926945693458,binh_thuong,0.026973026973026972,
+KHACH_THAT_02,5,0.2,0.09290709290709291,0.2997002997002997,0.5394605394605395,0.6693306693306693,0.0,0.992178092639374,review_xau,0.09290709290709291,
+TK_CHUYEN_CHE_01,5,0.0,0.09290709290709291,0.030969030969030968,0.998001998001998,0.996003996003996,0.0,0.7667677639059176,binh_thuong,0.09290709290709291,"che qua muc 100% (bao_cao, khong khop nhan Yelp); chua mua ma review 100% (bao_cao, chua kiem chung)"
+TK_DONG_DAP_01,6,0.16666667,0.97002997002997,0.999000999000999,0.24875124875124874,0.6693306693306693,0.0,0.9728884548331111,rat_nghi,0.97002997002997,"dang don dap 97% (quyet_dinh, da kiem chung); khen qua muc 100% (theo_doi, bang chung yeu)"
+TK_MOI_01,1,1.0,,,,,,,rat_nghi,,
+TK_MOI_02,1,0.0,,,,,,,rat_nghi,,
+TK_MOI_03,1,1.0,,,,,,,rat_nghi,,
+TK_MOI_04,1,0.0,,,,,,,rat_nghi,,
+TK_MOI_05,1,1.0,,,,,,,rat_nghi,,
+TK_MOI_06,1,1.0,,,,,,,rat_nghi,,
